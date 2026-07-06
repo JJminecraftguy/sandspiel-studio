@@ -17,6 +17,18 @@ var transport = nodemailer.createTransport(sgTransport(options));
 
 import { prisma } from "../../../db/prisma";
 
+function stringifyEmailDebugValue(value) {
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    };
+  }
+
+  return value;
+}
+
 async function sendVerificationRequest({
   identifier: email,
   url,
@@ -25,13 +37,43 @@ async function sendVerificationRequest({
   token,
 }) {
   const { host } = new URL(url);
-  await transport.sendMail({
+  const message = {
     to: email,
     from: "noreply@sandspiel.club",
     subject: `Sign in to ${host}`,
     text: text({ url, host }),
     html: html({ url, host, email }),
+  };
+
+  console.info("[auth-email] Starting verification email send", {
+    email,
+    host,
+    providerId: provider?.id,
+    token,
+    expires,
+    url,
+    hasSendGridApiKey: Boolean(process.env.SENDGRID_API_KEY),
   });
+  console.info("[auth-email] Sending message payload", message);
+
+  try {
+    const result = await transport.sendMail(message);
+    console.info("[auth-email] SendGrid/Nodemailer response", result);
+  } catch (error) {
+    console.error("[auth-email] Verification email send failed", {
+      email,
+      host,
+      providerId: provider?.id,
+      token,
+      expires,
+      url,
+      message,
+      error: stringifyEmailDebugValue(error),
+    });
+    console.warn(
+      "[auth-email] Suppressing EmailSignin redirect so the failure stays visible in server logs."
+    );
+  }
 }
 
 const authOptions: NextAuthOptions = {
